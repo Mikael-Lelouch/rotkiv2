@@ -6,6 +6,7 @@ from rotkehlchen.assets.asset import Asset
 from rotkehlchen.constants.misc import ZERO
 from rotkehlchen.db.utils import AssetBalance, LocationData, SingleAssetBalance
 from rotkehlchen.errors import DeserializationError
+from rotkehlchen.exchanges.data_structures import Trade
 from rotkehlchen.fval import AcceptableFValInitInput, FVal
 from rotkehlchen.typing import (
     AssetAmount,
@@ -46,6 +47,19 @@ def _process_entry(entry: Any) -> Union[str, List[Any], Dict[str, Any], Any]:
             'amount': entry.amount,
             'usd_value': entry.usd_value,
         }
+    elif isinstance(entry, Trade):
+        return {
+            'timestamp': entry.timestamp,
+            'location': entry.location,
+            'pair': entry.pair,
+            'trade_type': str(entry.trade_type),
+            'amount': str(entry.amount),
+            'rate': str(entry.rate),
+            'fee': str(entry.fee),
+            'fee_currency': entry.fee_currency.identifier,
+            'link': entry.link,
+            'notes': entry.notes,
+        }
     elif isinstance(entry, EthTokenInfo):
         return entry._asdict()
     elif isinstance(entry, tuple):
@@ -63,6 +77,7 @@ def process_result(result: Dict[str, Any]) -> Dict[str, Any]:
           is handled by the client application and we lose nothing in the transfer
 
         - if a dictionary has an Asset for a key use its identifier as the key value
+        - all NamedTuples and Dataclasses must be serialized into dicts
     """
     processed_result = _process_entry(result)
     assert isinstance(processed_result, Dict)
