@@ -99,7 +99,7 @@ jobs:
       CI: true
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
         python-version: [3.7]
     runs-on: ${{ matrix.os }}
     steps:
