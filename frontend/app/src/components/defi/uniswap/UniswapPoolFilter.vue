@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <v-card v-bind="$attrs">
     <div class="mx-4 pt-2">
       <v-autocomplete
@@ -7,7 +7,7 @@
         multiple
         clearable
         deletable-chips
-        :label="$t('uniswap_pool_filter.label')"
+        :label="$t('liquidity_pool_selector.label')"
         :filter="filter"
         item-value="address"
         chips
