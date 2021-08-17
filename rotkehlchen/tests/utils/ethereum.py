@@ -5,10 +5,12 @@ from typing import List, Tuple
 import gevent
 
 from rotkehlchen.chain.ethereum.manager import NodeName
+from rotkehlchen.logging import RotkehlchenLogsAdapter
 
 NODE_CONNECTION_TIMEOUT = 10
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+log = RotkehlchenLogsAdapter(logger)
 
 INFURA_TEST = 'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]'
 
