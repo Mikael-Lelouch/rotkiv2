@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 from typing import Any, Dict, List, Tuple
 
 import gevent
@@ -19,7 +20,13 @@ NODE_CONNECTION_TIMEOUT = 10
 logger = logging.getLogger(__name__)
 log = RotkehlchenLogsAdapter(logger)
 
-INFURA_TEST = 'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]'
+# TODO: improve this. Switch between them and find one that has requests.
+# Also use Alchemy too
+INFURA_TEST = random.choice([
+    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
+    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
+    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
+])
 
 ETHERSCAN_AND_INFURA_PARAMS: Tuple[str, List[Tuple]] = ('ethrpc_endpoint,ethereum_manager_connect_at_start, call_order', [  # noqa: E501
     # Query etherscan only
