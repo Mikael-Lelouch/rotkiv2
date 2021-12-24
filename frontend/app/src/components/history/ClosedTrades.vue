@@ -1,6 +1,6 @@
 <template>
   <fragment>
-    <card class="mt-8" outlined-body>
+    <card outlined-body>
       <v-btn
         absolute
         fab
@@ -36,10 +36,12 @@
             </div>
           </v-col>
           <v-col cols="12" sm="6">
-            <table-filter
-              :matchers="matchers"
-              @update:matches="updateFilterHandler($event)"
-            />
+            <div class="pb-sm-8">
+              <table-filter
+                :matchers="matchers"
+                @update:matches="updateFilterHandler($event)"
+              />
+            </div>
           </v-col>
         </v-row>
       </template>
@@ -64,15 +66,29 @@
             @input="setAllSelected($event)"
           />
         </template>
+        <template #item.selection="{ item }">
+          <v-simple-checkbox
+            :ripple="false"
+            color="primary"
+            :value="isSelected(item.tradeId)"
+            @input="selectionChanged(item.tradeId, $event)"
+          />
+        </template>
+        <template #item.ignoredInAccounting="{ item }">
+          <v-icon v-if="item.ignoredInAccounting">mdi-check</v-icon>
+        </template>
         <template #item.location="{ item }">
-          <location-display :identifier="item.location" />
+          <location-display
+            data-cy="trade-location"
+            :identifier="item.location"
+          />
         </template>
         <template #item.type="{ item }">
           <div>{{ item.tradeType }}</div>
         </template>
         <template #item.baseAsset="{ item }">
           <asset-details
-            data-cy="trade_base"
+            data-cy="trade-base"
             opens-details
             hide-name
             :asset="item.baseAsset"
@@ -83,7 +99,7 @@
             hide-name
             opens-details
             :asset="item.quoteAsset"
-            data-cy="trade_quote"
+            data-cy="trade-quote"
           />
         </template>
         <template #item.description="{ item }">
@@ -92,14 +108,6 @@
               ? $t('closed_trades.description.with')
               : $t('closed_trades.description.for')
           }}
-        </template>
-        <template #item.selection="{ item }">
-          <v-simple-checkbox
-            :ripple="false"
-            color="primary"
-            :value="isSelected(item.tradeId)"
-            @input="selectionChanged(item.tradeId, $event)"
-          />
         </template>
         <template #item.rate="{ item }">
           <amount-display
@@ -112,9 +120,6 @@
             class="closed-trades__trade__amount"
             :value="item.amount"
           />
-        </template>
-        <template #item.ignoredInAccounting="{ item }">
-          <v-icon v-if="item.ignoredInAccounting">mdi-check</v-icon>
         </template>
         <template #item.time="{ item }">
           <div class="d-flex flex-row align-center">
@@ -129,7 +134,6 @@
             />
           </div>
         </template>
-
         <template #expanded-item="{ headers, item }">
           <trade-details :span="headers.length" :item="item" />
         </template>
@@ -196,14 +200,18 @@ import {
   setupSupportedAssets
 } from '@/composables/balances';
 import { setupStatusChecking } from '@/composables/common';
-import { setupAssociatedLocations, setupTrades } from '@/composables/history';
-import { getPremium } from '@/composables/session';
+import {
+  setupAssociatedLocations,
+  setupEntryLimit,
+  setupTrades
+} from '@/composables/history';
 import { setupSettings } from '@/composables/settings';
 import i18n from '@/i18n';
 import {
   Trade,
   TradeLocation,
-  TradeRequestPayload
+  TradeRequestPayload,
+  TradeType
 } from '@/services/history/types';
 import { Section } from '@/store/const';
 import { IgnoreActionType, TradeEntry } from '@/store/history/types';
@@ -313,21 +321,7 @@ export default defineComponent({
 
     const { trades, limit, found, total, deleteTrade } = setupTrades();
 
-    const premium = getPremium();
-    const itemLength = computed(() => {
-      const isPremium = premium.value;
-      const totalFound = found.value;
-      if (isPremium) {
-        return totalFound;
-      }
-
-      const entryLimit = limit.value;
-      return Math.min(totalFound, entryLimit);
-    });
-
-    const showUpgradeRow = computed(() => {
-      return limit.value <= total.value && limit.value > 0;
-    });
+    const { itemLength, showUpgradeRow } = setupEntryLimit(limit, found, total);
 
     const { isSectionRefreshing, shouldShowLoadingScreen } =
       setupStatusChecking();
@@ -430,81 +424,76 @@ export default defineComponent({
 
     const matchers = computed<
       SearchMatcher<TradeFilterKeys, TradeFilterValueKeys>[]
-    >(() => {
-      return [
-        {
-          key: TradeFilterKeys.BASE,
-          keyValue: TradeFilterValueKeys.BASE,
-          description: i18n.t('closed_trades.filter.base_asset').toString(),
-          suggestions: () => availableAssets.value,
-          validate: (asset: string) => availableAssets.value.includes(asset),
-          transformer: (asset: string) =>
-            getAssetIdentifierForSymbol(asset) ?? ''
+    >(() => [
+      {
+        key: TradeFilterKeys.BASE,
+        keyValue: TradeFilterValueKeys.BASE,
+        description: i18n.t('closed_trades.filter.base_asset').toString(),
+        suggestions: () => availableAssets.value,
+        validate: (asset: string) => availableAssets.value.includes(asset),
+        transformer: (asset: string) => getAssetIdentifierForSymbol(asset) ?? ''
+      },
+      {
+        key: TradeFilterKeys.QUOTE,
+        keyValue: TradeFilterValueKeys.QUOTE,
+        description: i18n.t('closed_trades.filter.quote_asset').toString(),
+        suggestions: () => availableAssets.value,
+        validate: (asset: string) => availableAssets.value.includes(asset),
+        transformer: (asset: string) => getAssetIdentifierForSymbol(asset) ?? ''
+      },
+      {
+        key: TradeFilterKeys.ACTION,
+        keyValue: TradeFilterValueKeys.ACTION,
+        description: i18n.t('closed_trades.filter.trade_type').toString(),
+        suggestions: () => TradeType.options,
+        validate: type => (TradeType.options as string[]).includes(type)
+      },
+      {
+        key: TradeFilterKeys.START,
+        keyValue: TradeFilterValueKeys.START,
+        description: i18n.t('closed_trades.filter.start_date').toString(),
+        suggestions: () => [],
+        hint: i18n
+          .t('closed_trades.filter.date_hint', {
+            format: getDateInputISOFormat(dateInputFormat.value)
+          })
+          .toString(),
+        validate: value => {
+          return (
+            value.length > 0 &&
+            !isNaN(convertToTimestamp(value, dateInputFormat.value))
+          );
         },
-        {
-          key: TradeFilterKeys.QUOTE,
-          keyValue: TradeFilterValueKeys.QUOTE,
-          description: i18n.t('closed_trades.filter.quote_asset').toString(),
-          suggestions: () => availableAssets.value,
-          validate: (asset: string) => availableAssets.value.includes(asset),
-          transformer: (asset: string) =>
-            getAssetIdentifierForSymbol(asset) ?? ''
+        transformer: (date: string) =>
+          convertToTimestamp(date, dateInputFormat.value).toString()
+      },
+      {
+        key: TradeFilterKeys.END,
+        keyValue: TradeFilterValueKeys.END,
+        description: i18n.t('closed_trades.filter.end_date').toString(),
+        suggestions: () => [],
+        hint: i18n
+          .t('closed_trades.filter.date_hint', {
+            format: getDateInputISOFormat(dateInputFormat.value)
+          })
+          .toString(),
+        validate: value => {
+          return (
+            value.length > 0 &&
+            !isNaN(convertToTimestamp(value, dateInputFormat.value))
+          );
         },
-        {
-          key: TradeFilterKeys.ACTION,
-          keyValue: TradeFilterValueKeys.ACTION,
-          description: i18n.t('closed_trades.filter.trade_type').toString(),
-          suggestions: () => ['buy', 'sell'],
-          validate: type => ['buy', 'sell'].includes(type)
-        },
-        {
-          key: TradeFilterKeys.START,
-          keyValue: TradeFilterValueKeys.START,
-          description: i18n.t('closed_trades.filter.start_date').toString(),
-          suggestions: () => [],
-          hint: i18n
-            .t('closed_trades.filter.date_hint', {
-              format: getDateInputISOFormat(dateInputFormat.value)
-            })
-            .toString(),
-          validate: value => {
-            return (
-              value.length > 0 &&
-              !isNaN(convertToTimestamp(value, dateInputFormat.value))
-            );
-          },
-          transformer: (date: string) =>
-            convertToTimestamp(date, dateInputFormat.value).toString()
-        },
-        {
-          key: TradeFilterKeys.END,
-          keyValue: TradeFilterValueKeys.END,
-          description: i18n.t('closed_trades.filter.end_date').toString(),
-          suggestions: () => [],
-          hint: i18n
-            .t('closed_trades.filter.date_hint', {
-              format: getDateInputISOFormat(dateInputFormat.value)
-            })
-            .toString(),
-          validate: value => {
-            return (
-              value.length > 0 &&
-              !isNaN(convertToTimestamp(value, dateInputFormat.value))
-            );
-          },
-          transformer: (date: string) =>
-            convertToTimestamp(date, dateInputFormat.value).toString()
-        },
-        {
-          key: TradeFilterKeys.LOCATION,
-          keyValue: TradeFilterValueKeys.LOCATION,
-          description: i18n.t('closed_trades.filter.location').toString(),
-          suggestions: () => availableLocations.value,
-          validate: location =>
-            availableLocations.value.includes(location as any)
-        }
-      ];
-    });
+        transformer: (date: string) =>
+          convertToTimestamp(date, dateInputFormat.value).toString()
+      },
+      {
+        key: TradeFilterKeys.LOCATION,
+        keyValue: TradeFilterValueKeys.LOCATION,
+        description: i18n.t('closed_trades.filter.location').toString(),
+        suggestions: () => availableLocations.value,
+        validate: location => availableLocations.value.includes(location as any)
+      }
+    ]);
 
     const updatePayloadHandler = () => {
       let paginationOptions = {};
