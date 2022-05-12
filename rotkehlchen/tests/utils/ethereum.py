@@ -37,6 +37,7 @@ INFURA_TEST = random.choice([
     'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
     'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
     'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
+    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
 ])
 ALCHEMY_TEST = 'https://eth-mainnet.alchemyapi.io/v2/ga1GtB7R26UgzjextaVpbaWZ49nSi2zt'
 
