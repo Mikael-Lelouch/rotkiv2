@@ -2221,6 +2221,7 @@
       "display_date_in_localtime": "Display date in localtime and not in UTC in CSV export, backend logs and other locations",
       "dot_rpc_endpoint": "Polkadot Node RPC Endpoint",
       "ksm_rpc_endpoint": "Kusama Node RPC Endpoint",
+      "language": "Selected language",
       "treat_eth2_as_eth": "Should treat ETH2 (Staked ETH) as ETH",
       "version_update_check": "Set the version update check period while in app",
       "version_update_check_enabled": "Enabled"
@@ -2287,6 +2288,9 @@
         "error": "There was an error setting the Kusama node RPC endpoint",
         "success_set": "The Kusama node RPC endpoint was set to {endpoint}",
         "success_unset": "The Kusama node RPC endpoint was successfully unset"
+      },
+      "language": {
+        "error": "Error change language setting"
       },
       "thousand_separator": {
         "error": "Error setting thousand separator",
