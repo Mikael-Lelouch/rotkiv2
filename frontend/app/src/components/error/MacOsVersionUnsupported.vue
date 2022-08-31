@@ -5,7 +5,7 @@
     :alternative="tc('macos_unsupported.message')"
   >
     <v-btn depressed color="primary" @click="closeApp()">
-      {{ tc('macos_unsupported.terminate') }}
+      {{ tc('common.actions.terminate') }}
     </v-btn>
   </error-screen>
 </template>
@@ -21,6 +21,7 @@ const { closeApp } = useInterop();
 
 <style scoped lang="scss">
 .macos-unsupported {
+  padding: 2rem 0;
   background-color: white;
 }
 </style>
