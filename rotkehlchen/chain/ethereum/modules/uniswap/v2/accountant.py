@@ -4,8 +4,7 @@ from rotkehlchen.accounting.structures.base import get_tx_event_type_identifier
 from rotkehlchen.accounting.structures.types import HistoryEventSubType, HistoryEventType
 from rotkehlchen.chain.ethereum.accounting.interfaces import ModuleAccountantInterface
 from rotkehlchen.chain.ethereum.accounting.structures import TxEventSettings, TxMultitakeTreatment
-
-from ..constants import CPT_UNISWAP_V2
+from rotkehlchen.chain.ethereum.modules.uniswap.constants import CPT_UNISWAP_V2
 
 if TYPE_CHECKING:
     from rotkehlchen.accounting.pot import AccountingPot
