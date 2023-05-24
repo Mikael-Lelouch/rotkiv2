@@ -1,5 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Optional
+from rotkehlchen.chain.evm.decoding.base import BaseDecoderToolsWithDSProxy
 
 from rotkehlchen.chain.evm.decoding.decoder import EVMTransactionDecoder
 from rotkehlchen.chain.evm.decoding.structures import (
@@ -35,6 +36,12 @@ class OptimismTransactionDecoder(EVMTransactionDecoder):
             value_asset=A_ETH.resolve_to_asset_with_oracles(),
             event_rules=[],
             misc_counterparties=[],
+            base_tools=BaseDecoderToolsWithDSProxy(
+                database=database,
+                evm_inquirer=optimism_inquirer,
+                is_non_conformant_erc721_fn=self._is_non_conformant_erc721,
+                address_is_exchange_fn=self._address_is_exchange,
+            ),
         )
 
     # -- methods that need to be implemented by child classes --
