@@ -10,7 +10,10 @@ if TYPE_CHECKING:
 
 
 class GitcoinDecoder(GitcoinV2CommonDecoder):
-    """This is the gitcoin v2 (allo protocol) decoder for Optimism"""
+    """This is the gitcoin v2 (allo protocol) decoder for Optimism
+
+    No gitcoin v1 in optimism since v1 was only on mainnet and zksync lite (maybe polygon too?)
+    """
 
     def __init__(  # pylint: disable=super-init-not-called
             self,
