@@ -10,6 +10,11 @@ from freezegun import freeze_time
 from rotkehlchen.assets.resolver import AssetResolver
 from rotkehlchen.chain.ethereum.modules.curve.curve_cache import CURVE_API_URLS
 from rotkehlchen.chain.evm.types import string_to_evm_address
+from rotkehlchen.chain.optimism.modules.velodrome.velodrome_cache import (
+    query_velodrome_data,
+    read_velodrome_pools_and_gauges_from_cache,
+    save_velodrome_data_to_cache,
+)
 from rotkehlchen.constants.resolver import evm_address_to_identifier
 from rotkehlchen.constants.timing import WEEK_IN_SECONDS
 from rotkehlchen.db.addressbook import DBAddressbook
@@ -54,7 +59,7 @@ CURVE_EXPECTED_GAUGES = {
     '0xDeBF20617708857ebe4F679508E7b7863a8A8EeE': '0xd662908ADA2Ea1916B3318327A97eB18aD588b5d',
 }
 
-EXPECTED_ADDRESBOOK_ENTRIES_FROM_API = [
+CURVE_EXPECTED_ADDRESBOOK_ENTRIES_FROM_API = [
     AddressbookEntry(
         address=string_to_evm_address('0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7'),
         name='Curve.fi DAI/USDC/USDT',
@@ -74,7 +79,7 @@ EXPECTED_ADDRESBOOK_ENTRIES_FROM_API = [
     ),
 ]
 
-EXPECTED_ADDRESBOOK_ENTRIES_FROM_CHAIN = [
+CURVE_EXPECTED_ADDRESBOOK_ENTRIES_FROM_CHAIN = [
     AddressbookEntry(
         address=string_to_evm_address('0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7'),
         name='3pool',
@@ -94,8 +99,82 @@ EXPECTED_ADDRESBOOK_ENTRIES_FROM_CHAIN = [
     ),
 ]
 
+VELODROME_SOME_EXPECTED_POOLS = {
+    string_to_evm_address('0x904f14F9ED81d0b0a40D8169B28592aac5687158'),
+    string_to_evm_address('0x7A7f1187c4710010DB17d0a9ad3fcE85e6ecD90a'),
+    string_to_evm_address('0x8134A2fDC127549480865fB8E5A9E8A8a95a54c5'),
+    string_to_evm_address('0x6e6046E9b5E3D90eac2ABbA610bcA725834Ca5b3'),
+    string_to_evm_address('0x58e6433A6903886E440Ddf519eCC573c4046a6b2'),
+}
 
-@pytest.mark.vcr()
+VELODROME_SOME_EXPECTED_GAUGES = {
+    string_to_evm_address('0x91f2e5c009D3742188FA77619582402681d73f98'),
+    string_to_evm_address('0xeC9df85F362D3EBc4b9CA0eD7d7fDecF8Cfbdeb8'),
+    string_to_evm_address('0x84195De69B8B131ddAa4Be4F75633fCD7F430b7c'),
+    string_to_evm_address('0xbcD875fADEd3D2b9458EA6b86Bd5283075D78a06'),
+    string_to_evm_address('0x8329c9c93B63dB8a56a3b9a0c44c2edAbD6572A8'),
+}
+
+VELODROME_SOME_EXPECTED_ASSETS = [
+    'eip155:10/erc20:0x8134A2fDC127549480865fB8E5A9E8A8a95a54c5',
+    'eip155:10/erc20:0xdfDD0b190aDF296BB0162d19c2e0206Db68FE475',
+    'eip155:10/erc20:0x484c2D6e3cDd945a8B2DF735e079178C1036578c',
+    'eip155:10/erc20:0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    'eip155:10/erc20:0x7F5c764cBc14f9669B88837ca1490cCa17c31607',
+]
+
+VELODROME_SOME_EXPECTED_ADDRESBOOK_ENTRIES = [
+    AddressbookEntry(
+        address=string_to_evm_address('0x904f14F9ED81d0b0a40D8169B28592aac5687158'),
+        name='Velodrome pool sAMMV2-opxveVELO/VELO',
+        blockchain=SupportedBlockchain.OPTIMISM,
+    ), AddressbookEntry(
+        address=string_to_evm_address('0x7A7f1187c4710010DB17d0a9ad3fcE85e6ecD90a'),
+        name='Velodrome pool vAMMV2-RED/VELO',
+        blockchain=SupportedBlockchain.OPTIMISM,
+    ), AddressbookEntry(
+        address=string_to_evm_address('0x8134A2fDC127549480865fB8E5A9E8A8a95a54c5'),
+        name='Velodrome pool vAMMV2-USDC/VELO',
+        blockchain=SupportedBlockchain.OPTIMISM,
+    ), AddressbookEntry(
+        address=string_to_evm_address('0x6e6046E9b5E3D90eac2ABbA610bcA725834Ca5b3'),
+        name='Velodrome pool vAMMV2-UNLOCK/VELO',
+        blockchain=SupportedBlockchain.OPTIMISM,
+    ), AddressbookEntry(
+        address=string_to_evm_address('0x58e6433A6903886E440Ddf519eCC573c4046a6b2'),
+        name='Velodrome pool vAMMV2-WETH/VELO',
+        blockchain=SupportedBlockchain.OPTIMISM,
+    ),
+]
+
+
+@pytest.mark.vcr(filter_query_parameters=['apikey'])
+def test_velodrome_cache(optimism_inquirer):
+    with GlobalDBHandler().conn.write_ctx() as write_cursor:
+        # Make sure that no velodrome related data is stored in the database.
+        write_cursor.execute('DELETE FROM general_cache WHERE key LIKE "%VELO%"')
+        write_cursor.execute('DELETE FROM unique_cache WHERE key LIKE "%VELO%"')
+        write_cursor.execute('DELETE FROM address_book')
+        write_cursor.execute('DELETE FROM assets')
+
+    optimism_inquirer.ensure_cache_data_is_updated(
+        cache_type=CacheType.VELODROME_POOL_ADDRESS,
+        query_method=query_velodrome_data,
+        save_method=save_velodrome_data_to_cache,
+    )  # populates cache, addressbook and assets tables
+    pools, gauges = read_velodrome_pools_and_gauges_from_cache()
+    assert pools >= VELODROME_SOME_EXPECTED_POOLS
+    assert gauges >= VELODROME_SOME_EXPECTED_GAUGES
+
+    with GlobalDBHandler().conn.read_ctx() as cursor:
+        addressbook_entries = DBAddressbook(optimism_inquirer.database).get_addressbook_entries(cursor=cursor)  # noqa: E501
+        asset_identifiers = cursor.execute('SELECT identifier FROM assets').fetchall()
+
+    assert all(entry in addressbook_entries for entry in VELODROME_SOME_EXPECTED_ADDRESBOOK_ENTRIES)  # noqa: E501
+    assert all((identifier,) in asset_identifiers for identifier in VELODROME_SOME_EXPECTED_ASSETS)
+
+
+@pytest.mark.vcr(filter_query_parameters=['apikey'])
 @pytest.mark.parametrize('have_decoders', [True])
 @pytest.mark.parametrize('use_curve_api', [True, False])
 def test_curve_cache(rotkehlchen_instance, use_curve_api):
@@ -233,6 +312,6 @@ def test_curve_cache(rotkehlchen_instance, use_curve_api):
     with GlobalDBHandler().conn.read_ctx() as cursor:
         known_addresses = db_addressbook.get_addressbook_entries(cursor=cursor)
     if use_curve_api:
-        assert known_addresses == EXPECTED_ADDRESBOOK_ENTRIES_FROM_API
+        assert known_addresses == CURVE_EXPECTED_ADDRESBOOK_ENTRIES_FROM_API
     else:
-        assert known_addresses == EXPECTED_ADDRESBOOK_ENTRIES_FROM_CHAIN
+        assert known_addresses == CURVE_EXPECTED_ADDRESBOOK_ENTRIES_FROM_CHAIN
