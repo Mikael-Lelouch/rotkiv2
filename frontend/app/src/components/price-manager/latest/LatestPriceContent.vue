@@ -99,7 +99,6 @@ const hideForm = () => {
 onMounted(async () => {
   setSubmitFunc(() => save(get(price), get(update)));
   setPostSubmitFunc(refresh);
-  startPromise(refresh());
 
   const query = get(route).query;
 
