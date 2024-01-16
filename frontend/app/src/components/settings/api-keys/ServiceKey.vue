@@ -26,7 +26,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const { apiKey, status } = toRefs(props);
 
-const currentValue = ref<string>();
+const currentValue = ref<string>('');
 const editMode = ref<boolean>(false);
 const cancellable = ref<boolean>(false);
 
@@ -60,7 +60,7 @@ function saveHandler() {
   if (get(editMode)) {
     emit('save', {
       name: props.name,
-      apiKey: get(currentValue)!,
+      apiKey: get(currentValue),
     });
     set(editMode, false);
     set(cancellable, true);
@@ -93,7 +93,7 @@ const slots = useSlots();
       data-cy="service-key__content"
     >
       <RuiRevealableTextField
-        v-model="currentValue"
+        v-model.trim="currentValue"
         variant="outlined"
         color="primary"
         class="grow"
