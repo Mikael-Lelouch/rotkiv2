@@ -23,11 +23,11 @@ log = RotkehlchenLogsAdapter(logger)
 
 class OptimismGovernorDecoder(GovernableDecoderInterface):
 
-    def __init__(  # pylint: disable=super-init-not-called
+    def __init__(
             self,
             ethereum_inquirer: 'EthereumInquirer',
             base_tools: 'BaseDecoderTools',
-            msg_aggregator: 'MessagesAggregator',  # pylint: disable=unused-argument
+            msg_aggregator: 'MessagesAggregator',
     ) -> None:
         super().__init__(
             evm_inquirer=ethereum_inquirer,
