@@ -3,13 +3,17 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from rotkehlchen.assets.asset import UnderlyingToken
 from rotkehlchen.assets.utils import TokenEncounterInfo, get_or_create_evm_token
-from rotkehlchen.chain.ethereum.modules.curve.constants import CURVE_ADDRESS_PROVIDER
 from rotkehlchen.chain.evm.constants import ETH_SPECIAL_ADDRESS, ZERO_ADDRESS
 from rotkehlchen.chain.evm.contracts import EvmContract
+from rotkehlchen.chain.evm.decoding.curve.constants import (
+    CURVE_ADDRESS_PROVIDER,
+    CURVE_API_URLS,
+    CURVE_METAREGISTRY_METHODS,
+    IGNORED_CURVE_POOLS,
+)
 from rotkehlchen.chain.evm.types import string_to_evm_address
 from rotkehlchen.constants import ONE
 from rotkehlchen.db.addressbook import DBAddressbook
-from rotkehlchen.db.drivers.gevent import DBCursor
 from rotkehlchen.errors.misc import (
     InputError,
     NotERC20Conformant,
@@ -35,39 +39,16 @@ from rotkehlchen.types import (
     ChainID,
     ChecksumEvmAddress,
     EvmTokenKind,
-    SupportedBlockchain,
 )
 from rotkehlchen.utils.network import request_get_dict
 
 if TYPE_CHECKING:
-    from rotkehlchen.chain.ethereum.node_inquirer import EthereumInquirer
+    from gevent import DBCursor
+    from rotkehlchen.chain.evm.node_inquirer import EvmNodeInquirer
     from rotkehlchen.db.dbhandler import DBHandler
 
 logger = logging.getLogger(__name__)
 log = RotkehlchenLogsAdapter(logger)
-
-
-# list of pools that we know contain bad tokens
-IGNORED_CURVE_POOLS = {'0x066B6e1E93FA7dcd3F0Eb7f8baC7D5A747CE0BF9'}
-
-CURVE_API_URLS = (
-    'https://api.curve.fi/api/getPools/ethereum/main',
-    'https://api.curve.fi/api/getPools/ethereum/crypto',
-    'https://api.curve.fi/api/getPools/ethereum/factory',
-    'https://api.curve.fi/api/getPools/ethereum/factory-crypto',
-    'https://api.curve.fi/api/getPools/ethereum/factory-crvusd',
-    'https://api.curve.fi/api/getPools/ethereum/factory-tricrypto',
-    'https://api.curve.fi/api/getPools/ethereum/factory-stable-ng',
-)
-
-
-CURVE_METAREGISTRY_METHODS = [
-    'get_pool_name',
-    'get_gauge',
-    'get_lp_token',
-    'get_coins',
-    'get_underlying_coins',
-]
 
 
 class CurvePoolData(NamedTuple):
@@ -79,41 +60,46 @@ class CurvePoolData(NamedTuple):
     underlying_coins: list[ChecksumEvmAddress] | None
 
 
-def read_curve_pools_and_gauges(chain_id: ChainID | None = None) -> tuple[dict[ChecksumEvmAddress, list[ChecksumEvmAddress]], set[ChecksumEvmAddress]]:  # noqa: E501 # pylint: disable=unused-argument
+def read_curve_pools_and_gauges(chain_id: ChainID) -> tuple[dict[ChecksumEvmAddress, list[ChecksumEvmAddress]], set[ChecksumEvmAddress]]:  # noqa: E501
     """Reads globaldb cache and returns:
-    - A set of all known curve pools addresses.
-    - A set of all known curve gauges addresses.
+    - A set of all known curve pools addresses for the given chain.
+    - A set of all known curve gauges addresses for the given chain.
 
-    Doesn't raise anything unless cache entries were inserted incorrectly.
+    Returned functions doesn't raise anything unless cache entries were inserted incorrectly.
     """
+    chain_id_str = str(chain_id.serialize_for_db())
     with GlobalDBHandler().conn.read_ctx() as cursor:
         curve_pools_lp_tokens = globaldb_get_general_cache_values(
             cursor=cursor,
-            key_parts=(CacheType.CURVE_LP_TOKENS,),
+            key_parts=(CacheType.CURVE_LP_TOKENS, chain_id_str),
         )
         curve_pools = {}
         curve_gauges = set()
         for lp_token_addr in curve_pools_lp_tokens:
             pool_address = globaldb_get_unique_cache_value(
                 cursor=cursor,
-                key_parts=(CacheType.CURVE_POOL_ADDRESS, lp_token_addr),
+                key_parts=(CacheType.CURVE_POOL_ADDRESS, chain_id_str, lp_token_addr),
             )
             if pool_address is None:
                 continue
             gauge_address_data = globaldb_get_unique_cache_value(
                 cursor=cursor,
-                key_parts=(CacheType.CURVE_GAUGE_ADDRESS, pool_address),
+                key_parts=(CacheType.CURVE_GAUGE_ADDRESS, chain_id_str, pool_address),
             )
             if gauge_address_data is not None:
                 curve_gauges.add(string_to_evm_address(gauge_address_data))
             pool_address = string_to_evm_address(pool_address)
-            curve_pools[pool_address] = read_curve_pool_tokens(cursor=cursor, pool_address=pool_address)  # noqa: E501
+            curve_pools[pool_address] = read_curve_pool_tokens(
+                cursor=cursor,
+                pool_address=pool_address,
+                chain_id=chain_id,
+            )
 
     return curve_pools, curve_gauges
 
 
-def ensure_curve_tokens_existence(
-        ethereum_inquirer: 'EthereumInquirer',
+def _ensure_curve_tokens_existence(
+        evm_inquirer: 'EvmNodeInquirer',
         all_pools: list[CurvePoolData],
 ) -> list[CurvePoolData]:
     """This function receives data about curve pools and ensures that lp tokens and pool coins
@@ -135,10 +121,10 @@ def ensure_curve_tokens_existence(
                 # ensure token exists
                 try:
                     get_or_create_evm_token(
-                        userdb=ethereum_inquirer.database,
+                        userdb=evm_inquirer.database,
                         evm_address=token_address,
-                        chain_id=ChainID.ETHEREUM,
-                        evm_inquirer=ethereum_inquirer,
+                        chain_id=evm_inquirer.chain_id,
+                        evm_inquirer=evm_inquirer,
                         encounter=TokenEncounterInfo(
                             description='Querying curve pools',
                             should_notify=False,
@@ -159,10 +145,10 @@ def ensure_curve_tokens_existence(
                 # ensure underlying token exists
                 try:
                     get_or_create_evm_token(
-                        userdb=ethereum_inquirer.database,
+                        userdb=evm_inquirer.database,
                         evm_address=underlying_token_address,
-                        chain_id=ChainID.ETHEREUM,
-                        evm_inquirer=ethereum_inquirer,
+                        chain_id=evm_inquirer.chain_id,
+                        evm_inquirer=evm_inquirer,
                         encounter=TokenEncounterInfo(
                             description='Querying curve pools',
                             should_notify=False,
@@ -178,10 +164,10 @@ def ensure_curve_tokens_existence(
                 try:
                     # and ensure token exists
                     get_or_create_evm_token(
-                        userdb=ethereum_inquirer.database,
+                        userdb=evm_inquirer.database,
                         evm_address=token_address,
-                        chain_id=ChainID.ETHEREUM,
-                        evm_inquirer=ethereum_inquirer,
+                        chain_id=evm_inquirer.chain_id,
+                        evm_inquirer=evm_inquirer,
                         underlying_tokens=[UnderlyingToken(
                             address=underlying_token_address,
                             token_kind=EvmTokenKind.ERC20,
@@ -199,16 +185,16 @@ def ensure_curve_tokens_existence(
                     )
                     continue
         else:
-            # Otherwise just ensure that coins and underlying coins exist in our assets database
+            # Otherwise just ensure that coins and underlying coins exist in our assets database  # noqa: E501
             for token_address in pool.coins + pool.underlying_coins:
                 if token_address == ETH_SPECIAL_ADDRESS:
                     continue
                 try:
                     get_or_create_evm_token(
-                        userdb=ethereum_inquirer.database,
+                        userdb=evm_inquirer.database,
                         evm_address=token_address,
-                        chain_id=ChainID.ETHEREUM,
-                        evm_inquirer=ethereum_inquirer,
+                        chain_id=evm_inquirer.chain_id,
+                        evm_inquirer=evm_inquirer,
                         encounter=TokenEncounterInfo(
                             description='Querying curve pools',
                             should_notify=False,
@@ -225,10 +211,10 @@ def ensure_curve_tokens_existence(
         # it should always be an ERC20
         try:
             get_or_create_evm_token(
-                userdb=ethereum_inquirer.database,
+                userdb=evm_inquirer.database,
                 evm_address=pool.lp_token_address,
-                chain_id=ChainID.ETHEREUM,
-                evm_inquirer=ethereum_inquirer,
+                chain_id=evm_inquirer.chain_id,
+                evm_inquirer=evm_inquirer,
                 protocol=CURVE_POOL_PROTOCOL,
                 encounter=TokenEncounterInfo(
                     description='Querying curve pools',
@@ -247,23 +233,25 @@ def ensure_curve_tokens_existence(
 
 
 def save_curve_data_to_cache(
-        write_cursor: DBCursor,
+        write_cursor: 'DBCursor',
         database: 'DBHandler',
         new_data: list[CurvePoolData],
+        chain_id: ChainID,
 ) -> None:
     """Stores data received about curve pools and gauges in the cache"""
     db_addressbook = DBAddressbook(db_handler=database)
+    chain_id_str = str(chain_id.serialize_for_db())
     for pool in new_data:
         addresbook_entries = [AddressbookEntry(
             address=pool.pool_address,
             name=pool.pool_name,
-            blockchain=SupportedBlockchain.ETHEREUM,
+            blockchain=chain_id.to_blockchain(),
         )]
         if pool.gauge_address is not None:
             addresbook_entries.append(AddressbookEntry(
                 address=pool.gauge_address,
                 name=f'Curve gauge for {pool.pool_name}',
-                blockchain=SupportedBlockchain.ETHEREUM,
+                blockchain=chain_id.to_blockchain(),
             ))
         try:
             db_addressbook.add_addressbook_entries(
@@ -277,36 +265,36 @@ def save_curve_data_to_cache(
 
         globaldb_set_general_cache_values(
             write_cursor=write_cursor,
-            key_parts=(CacheType.CURVE_LP_TOKENS,),
+            key_parts=(CacheType.CURVE_LP_TOKENS, chain_id_str),
             values=[pool.lp_token_address],  # keys of pools_mapping are lp tokens
         )
         globaldb_set_unique_cache_value(
             write_cursor=write_cursor,
-            key_parts=(CacheType.CURVE_POOL_ADDRESS, pool.lp_token_address),
+            key_parts=(CacheType.CURVE_POOL_ADDRESS, chain_id_str, pool.lp_token_address),
             value=pool.pool_address,
         )
         for idx, coin in enumerate(pool.coins):
             globaldb_set_general_cache_values(
                 write_cursor=write_cursor,
-                key_parts=(CacheType.CURVE_POOL_TOKENS, pool.pool_address, str(idx)),
+                key_parts=(CacheType.CURVE_POOL_TOKENS, chain_id_str, pool.pool_address, str(idx)),
                 values=[coin],
             )
         if pool.underlying_coins is not None:
             for idx, underlying_coin in enumerate(pool.underlying_coins):
                 globaldb_set_general_cache_values(
                     write_cursor=write_cursor,
-                    key_parts=(CacheType.CURVE_POOL_UNDERLYING_TOKENS, pool.pool_address, str(idx)),  # noqa: E501
+                    key_parts=(CacheType.CURVE_POOL_UNDERLYING_TOKENS, chain_id_str, pool.pool_address, str(idx)),  # noqa: E501
                     values=[underlying_coin],
                 )
         if pool.gauge_address is not None:
             globaldb_set_unique_cache_value(
                 write_cursor=write_cursor,
-                key_parts=(CacheType.CURVE_GAUGE_ADDRESS, pool.pool_address),
+                key_parts=(CacheType.CURVE_GAUGE_ADDRESS, chain_id_str, pool.pool_address),
                 value=pool.gauge_address,
             )
 
 
-def query_curve_data_from_api(existing_pools: list[ChecksumEvmAddress]) -> list[CurvePoolData]:
+def _query_curve_data_from_api(existing_pools: list[ChecksumEvmAddress]) -> list[CurvePoolData]:
     """
     Query all curve information(lp tokens, pools, gagues, pool coins) from curve api.
 
@@ -356,8 +344,8 @@ def query_curve_data_from_api(existing_pools: list[ChecksumEvmAddress]) -> list[
     return processed_new_pools
 
 
-def query_curve_data_from_chain(
-        ethereum: 'EthereumInquirer',
+def _query_curve_data_from_chain(
+        evm_inquirer: 'EvmNodeInquirer',
         existing_pools: list[ChecksumEvmAddress],
 ) -> list[CurvePoolData] | None:
     """
@@ -366,10 +354,10 @@ def query_curve_data_from_chain(
     May raise:
     - RemoteError if failed to query chain
     """
-    address_provider = ethereum.contracts.contract(CURVE_ADDRESS_PROVIDER)
+    address_provider = evm_inquirer.contracts.contract(CURVE_ADDRESS_PROVIDER[evm_inquirer.chain_id])  # noqa: E501
     try:
         metaregistry_address = deserialize_evm_address(address_provider.call(
-            node_inquirer=ethereum,
+            node_inquirer=evm_inquirer,
             method_name='get_address',
             arguments=[7],
         ))
@@ -379,14 +367,14 @@ def query_curve_data_from_chain(
 
     metaregistry = EvmContract(
         address=metaregistry_address,
-        abi=ethereum.contracts.abi('CURVE_METAREGISTRY'),  # type: ignore[call-overload]  # for some reason mypy doesn't properly see argument type
+        abi=evm_inquirer.contracts.abi('CURVE_METAREGISTRY'),  # type: ignore[call-overload]  # for some reason mypy doesn't properly see argument type
         deployed_block=0,  # deployment_block is not used and the contract is dynamic
     )
-    pool_count = metaregistry.call(node_inquirer=ethereum, method_name='pool_count')
+    pool_count = metaregistry.call(node_inquirer=evm_inquirer, method_name='pool_count')
     new_pools = []
     for pool_index in range(pool_count):
         raw_address = metaregistry.call(
-            node_inquirer=ethereum,
+            node_inquirer=evm_inquirer,
             method_name='pool_list',
             arguments=[pool_index],
         )
@@ -406,7 +394,7 @@ def query_curve_data_from_chain(
             )
             for method_name in CURVE_METAREGISTRY_METHODS
         ]
-        raw_pool_properties = ethereum.multicall_2(calls=calls, require_success=True)
+        raw_pool_properties = evm_inquirer.multicall_2(calls=calls, require_success=True)
         decoded_pool_properties = [
             metaregistry.decode(result=result[1], method_name=method_name, arguments=[pool_address])  # noqa: E501
             for result, method_name in zip(raw_pool_properties, CURVE_METAREGISTRY_METHODS, strict=True)  # length should be same due to the call # noqa: E501
@@ -446,7 +434,7 @@ def query_curve_data_from_chain(
 
 
 def query_curve_data(
-        inquirer: 'EthereumInquirer',
+        inquirer: 'EvmNodeInquirer',
         cache_type: Literal[CacheType.CURVE_LP_TOKENS],
 ) -> list[CurvePoolData] | None:
     """Query curve lp tokens, curve pools and curve gauges.
@@ -456,20 +444,22 @@ def query_curve_data(
 
     There is a known issue that curve api and metaregistry return different pool names. For example
     curve api returns "Curve.fi DAI/USDC/USDT" while metaregistry returns "3pool".
-    TODO: think of how to make pool names uniform.
-    """
+    TODO: think of how to make pool names uniform."""
     with GlobalDBHandler().conn.read_ctx() as cursor:
         existing_pools = [
             string_to_evm_address(address)
-            for address in globaldb_get_general_cache_like(cursor=cursor, key_parts=(cache_type,))
+            for address in globaldb_get_general_cache_like(
+                cursor=cursor,
+                key_parts=(cache_type, str(inquirer.chain_id.serialize_for_db())),
+            )
         ]
     try:
-        pools_data: list[CurvePoolData] | None = query_curve_data_from_api(existing_pools=existing_pools)  # noqa: E501
+        pools_data: list[CurvePoolData] | None = _query_curve_data_from_api(existing_pools=existing_pools)  # noqa: E501
     except (RemoteError, UnableToDecryptRemoteData) as e:
         log.error(f'Could not query curve api due to: {e}. Will query metaregistry on chain')
         try:
-            pools_data = query_curve_data_from_chain(
-                ethereum=inquirer,
+            pools_data = _query_curve_data_from_chain(
+                evm_inquirer=inquirer,
                 existing_pools=existing_pools,
             )
         except RemoteError as err:
@@ -479,8 +469,8 @@ def query_curve_data(
     if pools_data is None:
         return None
 
-    verified_pools = ensure_curve_tokens_existence(
-        ethereum_inquirer=inquirer,
+    verified_pools = _ensure_curve_tokens_existence(
+        evm_inquirer=inquirer,
         all_pools=pools_data,
     )
     return verified_pools
