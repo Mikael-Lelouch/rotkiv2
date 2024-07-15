@@ -1,6 +1,5 @@
 import logging
 import os
-import random
 from typing import TYPE_CHECKING, Any
 
 import gevent
@@ -50,14 +49,7 @@ NODE_CONNECTION_TIMEOUT = 10
 logger = logging.getLogger(__name__)
 log = RotkehlchenLogsAdapter(logger)
 
-# TODO: improve this. Switch between them and find one that has requests.
-# Also use Alchemy too
-INFURA_TEST = random.choice([
-    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
-    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
-    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
-    'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]',
-])
+INFURA_TEST = 'https://mainnet.infura.io/v3/[REDACTED-2026-11-06]'
 ALCHEMY_TEST = 'https://eth-mainnet.alchemyapi.io/v2/ga1GtB7R26UgzjextaVpbaWZ49nSi2zt'
 
 PRUNED_AND_NOT_ARCHIVED_NODE = WeightedNode(
