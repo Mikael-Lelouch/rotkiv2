@@ -14,6 +14,8 @@
     "vitest.config.*",
     "cypress.config.*",
     "nightwatch.conf.*",
-    "playwright.config.*"
+    "playwright.config.*",
+    "scripts/**/*",
+    "shared/external-links.ts"
   ]
 }
