@@ -148,6 +148,7 @@ defineExpose({
         :chains="usableChains"
         hide-chain-icon
         outlined
+        show-details
         multichain
         required
         unique
