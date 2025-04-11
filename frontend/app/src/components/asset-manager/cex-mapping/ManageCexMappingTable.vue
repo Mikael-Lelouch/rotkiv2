@@ -37,7 +37,7 @@ const cols = computed<DataTableColumn<CexMapping>[]>(() => [{
   align: 'center',
   cellClass: 'py-3',
   key: 'locationSymbol',
-  label: t('asset_management.cex_mapping.location_symbol'),
+  label: t('asset_management.cex_mapping.asset_symbol'),
 }, {
   cellClass: 'py-0 border-x border-default',
   class: 'border-x border-default',
@@ -45,7 +45,7 @@ const cols = computed<DataTableColumn<CexMapping>[]>(() => [{
   label: t('asset_management.cex_mapping.recognized_as'),
 }, {
   key: 'actions',
-  label: '',
+  label: t('common.actions_text'),
 }]);
 
 function setPage(page: number) {

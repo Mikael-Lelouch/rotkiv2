@@ -110,10 +110,7 @@ function showDeleteConfirmation(item: CexMapping) {
 </script>
 
 <template>
-  <TablePageLayout
-    child
-    class="md:-mt-[4.5rem]"
-  >
+  <TablePageLayout child>
     <template #buttons>
       <RuiButton
         color="primary"
