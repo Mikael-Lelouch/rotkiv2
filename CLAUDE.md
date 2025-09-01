@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance for AI coding assistants (e.g., OpenAI Codex CLI, Claude Code, GitHub Copilot Chat) working with code in this repository.
 
 ## Project Overview
 
@@ -11,10 +11,19 @@ Rotki is a privacy-focused crypto portfolio management and tax reporting applica
 
 ## Development Commands
 
+### Prerequisites
+- Node.js 22+, pnpm 10+
+- Python 3.11+
+- Rust (stable toolchain)
+- uv (https://docs.astral.sh/uv/)
+
 ### Quick Start
 ```bash
-# Install dependencies (requires Node.js 22+, Python 3.11+, pnpm 10+)
+# Install JS dependencies at repo root
 pnpm install
+
+# (Python) Create/sync virtual env via uv
+uv sync
 
 # Run full development environment (frontend + backend + colibri)
 pnpm dev
@@ -26,7 +35,7 @@ pnpm dev:web
 ### Backend Development
 ```bash
 # Run backend server
-python -m rotkehlchen --api-port 4242 --websockets-port 4333
+uv run python -m rotkehlchen --api-port 4242 --websockets-port 4333
 
 # Run all backend tests
 uv run python pytestgeventwrapper.py
@@ -36,6 +45,9 @@ uv run python pytestgeventwrapper.py rotkehlchen/tests/api/test_assets.py
 
 # Run specific test
 uv run python pytestgeventwrapper.py rotkehlchen/tests/api/test_assets.py::test_add_user_asset
+
+# Filter tests with -k
+uv run python pytestgeventwrapper.py -k add_user_asset
 
 # Lint Python code
 uv run make lint
@@ -317,14 +329,10 @@ The mapping of these HistoryEvents types, subtypes, and categories is done in [r
 
 ### Frontend Testing
 - Vitest for unit tests with Vue Test Utils
-- Cypress for E2E testing
-- Component testing with jsdom
+- Component tests should follow existing patterns in `frontend/app/tests/` and `*.spec.ts`
 
-## Build and Packaging
+## Packaging
 ```bash
-# Build Electron app for current platform
-pnpm electron:build
-
 # Package for distribution (requires proper environment setup)
 python package.py
 ```
@@ -343,16 +351,15 @@ python package.py
 5. WebSocket messages follow specific format - check `api/websockets/typedefs.py`
 6. For all python backend constants make sure to use the `Final` type specifier.
 
-
 ## Committing
 - Commits should be just to the point, not too long and not too short.
 - Commit titles should not exceed 50 characters.
 - Give a description of what the commit does in a short title. If more information is needed, then add a blank line and afterward elaborate with as much information as needed.
 - Commits should do one thing; if two commits both do the same thing, that's a good sign they should be combined.
-- Do not add Co-Authored-By: Claude or similar anywhere in the commit.
+- Do not add Co-Authored-By entries for any AI tool.
 
 ## Opening PRs
-- Do not add Co-Authored-By: Claude or similar anywhere.
+- Do not add Co-Authored-By entries for any AI tool.
 
 ## Common Issues & Solutions
 - Frontend build fails: Run `pnpm run clean:modules` then `pnpm install --frozen-lockfile`
@@ -426,4 +433,5 @@ When reviewing code changes, follow this systematic approach:
   ✅ CORRECT: '0x5A0b54D5dc17e0AadC383d2db43B0a0D3E029c4c'
   ❌ WRONG: '0x5a0b54d5dc17e0aadc383d2db43b0a0d3e029c4c'
 - If you see "Invalid XXX account in DB" it's almost certain the address is not checksummed. Always checksum addresses you use with to_checksum_address
-- string_to_evm_address() is just a no-op typing function. It will not checksum the literal argument to a checksummed evm address. That means you should make sure to only give checksummed EVM address literals to it
+- `string_to_evm_address()` is just a no-op typing function. It will not checksum the literal argument to a checksummed evm address. That means you should make sure to only give checksummed EVM address literals to it
+
