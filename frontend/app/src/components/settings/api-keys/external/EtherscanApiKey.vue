@@ -19,7 +19,7 @@ const status = actionStatus(name);
 const { prioritized, remove: removeNotification } = useNotificationsStore();
 
 /**
- * After an api key is added, remove the etherscan notification for that location
+ * After an api key is added, remove the etherscan notification
  */
 function removeEtherscanNotification() {
   // using prioritized list here, because the actionable notifications are always on top (index 0|1)
