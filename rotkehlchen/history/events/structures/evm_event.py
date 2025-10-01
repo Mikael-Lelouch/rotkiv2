@@ -2,7 +2,6 @@ import logging
 from enum import auto
 from typing import TYPE_CHECKING, Any, Final, cast
 
-from rotkehlchen.accounting.mixins.event import AccountingEventType
 from rotkehlchen.accounting.types import EventAccountingRuleStatus
 from rotkehlchen.assets.asset import Asset
 from rotkehlchen.chain.evm.types import string_to_evm_address
@@ -11,7 +10,7 @@ from rotkehlchen.history.events.structures.base import (
     HISTORY_EVENT_DB_TUPLE_WRITE,
     HistoryBaseEntry,
     HistoryBaseEntryType,
-    get_event_type_identifier,
+    HistoryEventWithCounterparty,
 )
 from rotkehlchen.history.events.structures.types import (
     CHAIN_EVENT_FIELDS_TYPE,
@@ -33,10 +32,7 @@ from rotkehlchen.utils.misc import timestamp_to_date, ts_ms_to_sec
 from rotkehlchen.utils.mixins.enums import SerializableEnumNameMixin
 
 if TYPE_CHECKING:
-    from more_itertools import peekable
 
-    from rotkehlchen.accounting.mixins.event import AccountingEventMixin
-    from rotkehlchen.accounting.pot import AccountingPot
     from rotkehlchen.history.events.structures.types import EVM_EVENT_DB_TUPLE_READ
 
 
@@ -63,7 +59,7 @@ class EvmProduct(SerializableEnumNameMixin):
     MINTING = auto()
 
 
-class EvmEvent(HistoryBaseEntry):  # hash in superclass
+class EvmEvent(HistoryEventWithCounterparty):  # hash in superclass
     """This is a class for storing evm events data and it extends HistoryBaseEntry.
 
     It adds the following fields:
@@ -106,7 +102,7 @@ class EvmEvent(HistoryBaseEntry):  # hash in superclass
             calculated_event_identifier = f'{location.to_chain_id()}{tx_hash.hex()}'
         else:
             calculated_event_identifier = event_identifier
-        HistoryBaseEntry.__init__(  # explicitly calling constructor due to some events having
+        HistoryEventWithCounterparty.__init__(  # explicitly calling constructor due to some events having  # noqa: E501
             self=self,  # diamond shaped inheritance. Which calls unexpected super()
             event_identifier=calculated_event_identifier,
             sequence_index=sequence_index,
@@ -120,10 +116,10 @@ class EvmEvent(HistoryBaseEntry):  # hash in superclass
             notes=notes,
             identifier=identifier,
             extra_data=extra_data,
+            counterparty=counterparty,
         )
         self.address = address
         self.tx_hash = tx_hash
-        self.counterparty = counterparty
         self.product = product
 
     @property
@@ -235,17 +231,6 @@ class EvmEvent(HistoryBaseEntry):  # hash in superclass
         except KeyError as e:
             raise DeserializationError(f'Did not find key {e!s} in Evm Event data') from e
 
-    def get_type_identifier(self, include_counterparty: bool = True, **kwargs: Any) -> int:
-        """
-        Computes the identifier from event type, event subtype and counterparty if
-        `include_counterparty` is True.
-        """
-        return get_event_type_identifier(
-            event_type=self.event_type,
-            event_subtype=self.event_subtype,
-            counterparty=self.counterparty if include_counterparty is True else None,
-        )
-
     def __eq__(self, other: object) -> bool:
         return (  # ignores are due to object and type checks in super not recognized
             HistoryBaseEntry.__eq__(self, other) is True and
@@ -270,15 +255,3 @@ class EvmEvent(HistoryBaseEntry):  # hash in superclass
             f'tx_hash={self.tx_hash.hex()} and time '
             f'{timestamp_to_date(ts_ms_to_sec(self.timestamp))} using {self.asset}'
         )
-
-    # -- Methods of AccountingEventMixin
-    @staticmethod
-    def get_accounting_event_type() -> AccountingEventType:
-        return AccountingEventType.TRANSACTION_EVENT
-
-    def process(
-            self,
-            accounting: 'AccountingPot',
-            events_iterator: "peekable['AccountingEventMixin']",  # pylint: disable=unused-argument
-    ) -> int:
-        return accounting.events_accountant.process(self, events_iterator)
