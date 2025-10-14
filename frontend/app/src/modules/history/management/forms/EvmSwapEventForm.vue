@@ -12,6 +12,7 @@ import CounterpartyInput from '@/components/inputs/CounterpartyInput.vue';
 import { useFormStateWatcher } from '@/composables/form';
 import { useHistoryEvents } from '@/composables/history/events';
 import { useEditModeStateTracker } from '@/composables/history/events/edit-mode-state';
+import { useSupportedChains } from '@/composables/info/chains';
 import EventDateLocation from '@/modules/history/management/forms/common/EventDateLocation.vue';
 import SwapSubEventList from '@/modules/history/management/forms/swap/SwapSubEventList.vue';
 import { useEventFormValidation } from '@/modules/history/management/forms/use-event-form-validation';
@@ -45,6 +46,8 @@ function emptyEvent(): EvmSwapFormData {
     txHash: '',
   };
 }
+
+const { txChainsToLocation } = useSupportedChains();
 
 const states = ref<EvmSwapFormData>(emptyEvent());
 const hasFee = ref<boolean>(false);
@@ -232,7 +235,8 @@ defineExpose({
     <EventDateLocation
       v-model:timestamp="timestamp"
       v-model:location="states.location"
-      location-disabled
+      :location-disabled="data.type !== 'add'"
+      :locations="txChainsToLocation"
       :error-messages="{
         location: toMessages(v$.location),
         timestamp: toMessages(v$.timestamp),
@@ -246,7 +250,7 @@ defineExpose({
       v-model="states.txHash"
       variant="outlined"
       color="primary"
-      disabled
+      :disabled="data.type !== 'add'"
       data-cy="tx-hash"
       :label="t('common.tx_hash')"
       :error-messages="toMessages(v$.txHash)"
