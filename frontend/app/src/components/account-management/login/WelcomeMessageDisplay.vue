@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { WelcomeMessage } from '@/types/dynamic-messages';
+import DOMPurify from 'dompurify';
 import { checkIfDevelopment } from '@shared/utils';
 import { ofetch } from 'ofetch';
 import ExternalLink from '@/components/helper/ExternalLink.vue';
@@ -11,11 +12,24 @@ const props = defineProps<{
   messages: WelcomeMessage[];
 }>();
 
-const svg = ref();
+const svg = ref<string>();
 
 const { onNavigate, onPause, onResume, step, steps } = useRandomStepper(props.messages.length);
 
-const activeItem = computed(() => props.messages[get(step) - 1]);
+const activeItem = computed<WelcomeMessage>(() => props.messages[get(step) - 1]);
+
+/**
+ * Sanitizes SVG content to prevent XSS attacks.
+ * Removes all script elements, event handlers, and potentially dangerous attributes.
+ */
+function sanitizeSvg(svgContent: string): string {
+  return DOMPurify.sanitize(svgContent, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    ADD_TAGS: ['use'],
+    FORBID_TAGS: ['script', 'style'],
+    FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+  });
+}
 
 async function fetchSvg(): Promise<string | null> {
   const url = get(activeItem).icon;
@@ -24,7 +38,8 @@ async function fetchSvg(): Promise<string | null> {
     return null;
 
   try {
-    return await ofetch(url, { responseType: 'text' });
+    const rawSvg = await ofetch(url, { responseType: 'text' });
+    return sanitizeSvg(rawSvg);
   }
   catch (error: any) {
     logger.error(error);

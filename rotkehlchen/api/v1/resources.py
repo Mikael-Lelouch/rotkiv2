@@ -2339,7 +2339,9 @@ class AssetIconsResource(BaseMethodView):
         to send multiform data and a json body in the same request.
         """
         with TemporaryDirectory() as temp_directory:
-            filename = file.filename or f'{asset.identifier}.png'
+            # Sanitize filename to prevent path traversal attacks
+            raw_filename = file.filename or f'{asset.identifier}.png'
+            filename = Path(raw_filename).name  # Extract just the filename, removing any path components
             filepath = Path(temp_directory) / filename
             file.save(str(filepath))
             return self.rest_api.upload_asset_icon(asset=asset, filepath=filepath)
@@ -2832,10 +2834,13 @@ class DBSnapshotsResource(BaseMethodView):
             location_data_snapshot_file: FileStorage,
     ) -> Response:
         with TemporaryDirectory() as temp_directory:
-            balance_snapshot_filename = balances_snapshot_file.filename or 'balances_snapshot_import.csv'  # noqa: E501
-            location_data_snapshot_filename = location_data_snapshot_file.filename or 'location_data_snapshot.csv'  # noqa: E501
+            # Sanitize filenames to prevent path traversal attacks
+            raw_balance_filename = balances_snapshot_file.filename or 'balances_snapshot_import.csv'
+            raw_location_filename = location_data_snapshot_file.filename or 'location_data_snapshot.csv'
+            balance_snapshot_filename = Path(raw_balance_filename).name  # Extract just the filename
+            location_data_snapshot_filename = Path(raw_location_filename).name  # Extract just the filename
             balance_snapshot_filepath = Path(temp_directory) / balance_snapshot_filename
-            location_data_snapshot_filepath = Path(temp_directory) / location_data_snapshot_filename  # noqa: E501
+            location_data_snapshot_filepath = Path(temp_directory) / location_data_snapshot_filename
             balances_snapshot_file.save(balance_snapshot_filepath)
             location_data_snapshot_file.save(location_data_snapshot_filepath)
             return self.rest_api.import_user_snapshot(

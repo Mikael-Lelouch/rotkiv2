@@ -335,16 +335,13 @@ def vcr_config() -> dict[str, Any]:
 def get_branch_distance(branch1: str, branch2: str) -> int:
     """Get the distance between branch1 and branch2 in number of commits"""
     merge_base = check_output(
-        args=f'git merge-base {branch1} {branch2}',
-        shell=True,
+        args=['git', 'merge-base', branch1, branch2],
     ).decode('utf-8').strip()
     distance_to_branch1 = int(check_output(
-        args=f'git rev-list --count {merge_base}..{branch1}',
-        shell=True,
+        args=['git', 'rev-list', '--count', f'{merge_base}..{branch1}'],
     ).decode('utf-8').strip())
     distance_to_branch2 = int(check_output(
-        args=f'git rev-list --count {merge_base}..{branch2}',
-        shell=True,
+        args=['git', 'rev-list', '--count', f'{merge_base}..{branch2}'],
     ).decode('utf-8').strip())
     return distance_to_branch1 + distance_to_branch2
 
@@ -377,15 +374,20 @@ def fixture_vcr_base_dir() -> Path:
         if root_dir.exists():  # test-caching dir exists but is not a git repo
             shutil.rmtree(root_dir)  # that means accounting rules or other test-caching was pulled first. Delete and repull.  # noqa: E501
 
-        cmd = f'git clone https://github.com/rotki/test-caching.git "{root_dir}"'
         log.debug(f'Cloning test caching repo to {root_dir}')
-        os.popen(cmd).read()
+        check_output(['git', 'clone', 'https://github.com/rotki/test-caching.git', str(root_dir)])
 
     if current_branch is None:
-        current_branch = os.popen('git rev-parse --abbrev-ref HEAD').read().rstrip('\n')
+        current_branch = check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode('utf-8').rstrip('\n')  # noqa: E501
     log.debug(f'At VCR setup, {current_branch=} {root_dir=}')
 
-    checkout_proc = Popen(f'cd "{root_dir}" && git fetch {depth_arg} origin && git checkout {current_branch}', env=dict(os.environ, LANG='en_US.UTF-8'), shell=True, stdout=PIPE, stderr=PIPE)  # noqa: E501
+    # Fetch and checkout in the test-caching repo
+    fetch_args = ['git', '-C', str(root_dir), 'fetch']
+    if depth_arg:
+        fetch_args.extend(depth_arg.split())
+    fetch_args.append('origin')
+    check_output(fetch_args)
+    checkout_proc = Popen(['git', '-C', str(root_dir), 'checkout', current_branch], env=dict(os.environ, LANG='en_US.UTF-8'), stdout=PIPE, stderr=PIPE)  # noqa: E501
     _, stderr = checkout_proc.communicate(timeout=SUBPROCESS_TIMEOUT)
 
     if (
@@ -401,7 +403,7 @@ def fixture_vcr_base_dir() -> Path:
             default_branch = 'develop'
 
         log.error(f'Could not find branch {current_branch} in {root_dir}. Defaulting to {default_branch}')  # noqa: E501
-        checkout_proc = Popen(f'cd "{root_dir}" && git checkout {default_branch}', shell=True, stdout=PIPE, stderr=PIPE)  # noqa: E501
+        checkout_proc = Popen(['git', '-C', str(root_dir), 'checkout', default_branch], stdout=PIPE, stderr=PIPE)  # noqa: E501
         _, stderr = checkout_proc.communicate(timeout=SUBPROCESS_TIMEOUT)
         if (
                 len(stderr) != 0 and
@@ -415,14 +417,14 @@ def fixture_vcr_base_dir() -> Path:
     log.debug(f'VCR setup: Checked out test-caching {current_branch} branch')
 
     # see if we have any uncommitted work
-    for diff_type in ('diff', 'diff --staged'):
-        diff_result = os.popen(f'cd "{root_dir}" && git {diff_type}').read()
+    for diff_args in (['diff'], ['diff', '--staged']):
+        diff_result = check_output(['git', '-C', str(root_dir)] + diff_args).decode('utf-8')
         if diff_result != '':
             log.debug('VCR setup: There is uncommitted work at the test-caching repository. Not modifying it')  # noqa: E501
             return base_dir
 
     # see if the branch is ahead of origin, meaning local is being worked on
-    compare_result = os.popen(f'cd "{root_dir}" && git rev-list --left-right --count {current_branch}...origin/{current_branch}').read()  # noqa: E501
+    compare_result = check_output(['git', '-C', str(root_dir), 'rev-list', '--left-right', '--count', f'{current_branch}...origin/{current_branch}']).decode('utf-8')  # noqa: E501
     result_split = compare_result.split()
     commits_ahead = 0 if len(result_split) == 0 else int(result_split[0])
     if commits_ahead > 0:
@@ -430,7 +432,7 @@ def fixture_vcr_base_dir() -> Path:
         return base_dir
 
     # since we got here reset to origin's equivalent branch
-    reset_proc = Popen(f'cd "{root_dir}" && git reset --hard origin/{current_branch}', shell=True, stdout=PIPE, stderr=PIPE)  # noqa: E501
+    reset_proc = Popen(['git', '-C', str(root_dir), 'reset', '--hard', f'origin/{current_branch}'], stdout=PIPE, stderr=PIPE)  # noqa: E501
     _, stderr = reset_proc.communicate(timeout=SUBPROCESS_TIMEOUT)
     if len(stderr) != 0:
         prefix = 'Failed to '
