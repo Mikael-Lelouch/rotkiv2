@@ -33,3 +33,6 @@ frontend/logs
 colibri/target
 **/.claude/
 out
+.env
+.env.*
+*.pem
